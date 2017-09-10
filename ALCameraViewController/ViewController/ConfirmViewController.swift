@@ -18,37 +18,33 @@ public class ConfirmViewController: UIViewController, UIScrollViewDelegate {
 	@IBOutlet weak var confirmButton: UIButton!
 	@IBOutlet weak var centeringView: UIView!
 	
-    var croppingParameters: CroppingParameters {
-        didSet {
-            cropOverlay.isResizable = croppingParameters.allowResizing
-            cropOverlay.minimumSize = croppingParameters.minimumSize
-        }
-    }
-
+	var allowsCropping: Bool = false
 	var verticalPadding: CGFloat = 30
 	var horizontalPadding: CGFloat = 30
 	
 	public var onComplete: CameraViewCompletion?
-
+	
 	let asset: PHAsset?
 	let image: UIImage?
 	
-	public init(image: UIImage, croppingParameters: CroppingParameters) {
-		self.croppingParameters = croppingParameters
+	public init(image: UIImage, allowsCropping: Bool) {
+		self.allowsCropping = allowsCropping
 		self.asset = nil
 		self.image = image
 		super.init(nibName: "ConfirmViewController", bundle: CameraGlobals.shared.bundle)
 	}
 	
-	public init(asset: PHAsset, croppingParameters: CroppingParameters) {
-		self.croppingParameters = croppingParameters
+	public init(asset: PHAsset, allowsCropping: Bool) {
+		self.allowsCropping = allowsCropping
 		self.asset = asset
 		self.image = nil
 		super.init(nibName: "ConfirmViewController", bundle: CameraGlobals.shared.bundle)
 	}
 	
-    public required init?(coder aDecoder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
+	public required init?(coder aDecoder: NSCoder) {
+		asset = nil
+		image = nil
+		super.init(coder: aDecoder)
 	}
 	
 	public override var prefersStatusBarHidden: Bool {
@@ -61,18 +57,15 @@ public class ConfirmViewController: UIViewController, UIScrollViewDelegate {
 	
 	public override func viewDidLoad() {
 		super.viewDidLoad()
-
+		
 		view.backgroundColor = UIColor.black
 		
 		scrollView.addSubview(imageView)
 		scrollView.delegate = self
 		scrollView.maximumZoomScale = 1
 		
-        cropOverlay.isHidden = true
-        cropOverlay.isResizable = croppingParameters.allowResizing
-        cropOverlay.isMovable = croppingParameters.allowMoving
-        cropOverlay.minimumSize = croppingParameters.minimumSize
-
+		cropOverlay.isHidden = true
+		
 		let spinner = showSpinner()
 		
 		disable()
@@ -100,7 +93,7 @@ public class ConfirmViewController: UIViewController, UIScrollViewDelegate {
 	public override func viewWillLayoutSubviews() {
 		super.viewWillLayoutSubviews()
 		let scale = calculateMinimumScale(view.frame.size)
-		let frame = croppingParameters.isEnabled ? cropOverlay.frame : view.bounds
+		let frame = allowsCropping ? cropOverlay.frame : view.bounds
 		
 		scrollView.contentInset = calculateScrollViewInsets(frame)
 		scrollView.minimumZoomScale = scale
@@ -115,7 +108,7 @@ public class ConfirmViewController: UIViewController, UIScrollViewDelegate {
 		let scale = calculateMinimumScale(size)
 		var frame = view.bounds
 		
-		if croppingParameters.isEnabled {
+		if allowsCropping {
 			frame = cropOverlay.frame
 			let centeringFrame = centeringView.frame
 			var origin: CGPoint
@@ -146,7 +139,11 @@ public class ConfirmViewController: UIViewController, UIScrollViewDelegate {
 	}
 	
 	private func configureWithImage(_ image: UIImage) {
-		cropOverlay.isHidden = !croppingParameters.isEnabled
+		if allowsCropping {
+			cropOverlay.isHidden = false
+		} else {
+			cropOverlay.isHidden = true
+		}
 		
 		buttonActions()
 		
@@ -158,7 +155,7 @@ public class ConfirmViewController: UIViewController, UIScrollViewDelegate {
 	private func calculateMinimumScale(_ size: CGSize) -> CGFloat {
 		var _size = size
 		
-		if croppingParameters.isEnabled {
+		if allowsCropping {
 			_size = cropOverlay.frame.size
 		}
 		
@@ -171,7 +168,7 @@ public class ConfirmViewController: UIViewController, UIScrollViewDelegate {
 		
 		var scale: CGFloat
 		
-		if croppingParameters.isEnabled {
+		if allowsCropping {
 			scale = max(scaleWidth, scaleHeight)
 		} else {
 			scale = min(scaleWidth, scaleHeight)
@@ -188,8 +185,8 @@ public class ConfirmViewController: UIViewController, UIScrollViewDelegate {
 	}
 	
 	private func centerImageViewOnRotate() {
-		if croppingParameters.isEnabled {
-			let size = cropOverlay.frame.size
+		if allowsCropping {
+			let size = allowsCropping ? cropOverlay.frame.size : scrollView.frame.size
 			let scrollInsets = scrollView.contentInset
 			let imageSize = imageView.frame.size
 			var contentOffset = CGPoint(x: -scrollInsets.left, y: -scrollInsets.top)
@@ -200,7 +197,7 @@ public class ConfirmViewController: UIViewController, UIScrollViewDelegate {
 	}
 	
 	private func centerScrollViewContents() {
-		let size = croppingParameters.isEnabled ? cropOverlay.frame.size : scrollView.frame.size
+		let size = allowsCropping ? cropOverlay.frame.size : scrollView.frame.size
 		let imageSize = imageView.frame.size
 		var imageOrigin = CGPoint.zero
 		
@@ -248,7 +245,7 @@ public class ConfirmViewController: UIViewController, UIScrollViewDelegate {
 					self?.showNoImageScreen(error)
 				}
 				.setAsset(asset)
-			if croppingParameters.isEnabled {
+			if allowsCropping {
 				let rect = normalizedRect(makeProportionalCropRect(), orientation: image.imageOrientation)
 				fetcher = fetcher.setCropRect(rect)
 			}
@@ -257,7 +254,7 @@ public class ConfirmViewController: UIViewController, UIScrollViewDelegate {
 		} else {
 			var newImage = image
 			
-			if croppingParameters.isEnabled {
+			if allowsCropping {
 				let cropRect = makeProportionalCropRect()
 				let resizedCropRect = CGRect(x: (image.size.width) * cropRect.origin.x,
 				                     y: (image.size.height) * cropRect.origin.y,
@@ -314,10 +311,7 @@ public class ConfirmViewController: UIViewController, UIScrollViewDelegate {
 	}
 	
 	private func makeProportionalCropRect() -> CGRect {
-		var cropRect = CGRect(x: cropOverlay.frame.origin.x + cropOverlay.outterGap,
-		                      y: cropOverlay.frame.origin.y + cropOverlay.outterGap,
-		                      width: cropOverlay.frame.size.width - 2 * cropOverlay.outterGap,
-		                      height: cropOverlay.frame.size.height - 2 * cropOverlay.outterGap)
+		var cropRect = cropOverlay.frame
 		cropRect.origin.x += scrollView.contentOffset.x
 		cropRect.origin.y += scrollView.contentOffset.y
 		
